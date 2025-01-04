@@ -11,35 +11,67 @@ import {
   Heading3,
   Bold,
   Italic,
-  Check
+  Check,
+  Code,
+  List,
+  ListOrdered,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  FileCode
 } from 'lucide-react';
 
-const RichTextEditor = () => {
-  const editorRef = useRef(null);
+interface RichTextEditorProps {
+  initialValue?: string;
+  onChange?: (content: { html: string; markdown: string }) => void;
+  className?: string;
+  placeholder?: string;
+}
+
+const RichTextEditor: React.FC<RichTextEditorProps> = ({
+  initialValue = '',
+  onChange,
+  className = '',
+  placeholder = 'Start typing...'
+}) => {
+  const editorRef = useRef<HTMLDivElement>(null);
+  const [isMarkdownMode, setIsMarkdownMode] = useState(false);
+  const [markdownContent, setMarkdownContent] = useState('');
   const [showLinkInput, setShowLinkInput] = useState(false);
   const [showImageInput, setShowImageInput] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [imageAlt, setImageAlt] = useState('');
-  
-  useEffect(() => {
-    // Enable content editing when component mounts
-    if (editorRef.current) {
-      editorRef.current.contentEditable = true;
-    }
-  }, []);
 
-  const execCommand = (command, value = null) => {
-    document.execCommand(command, false, value);
-    editorRef.current.focus();
+  useEffect(() => {
+    if (editorRef.current) {
+      editorRef.current.contentEditable = !isMarkdownMode;
+    }
+  }, [isMarkdownMode]);
+
+  const execCommand = (command: string, value: string | null = null) => {
+    if (!isMarkdownMode) {
+      document.execCommand(command, false, value);
+      editorRef.current?.focus();
+      updateContent();
+    }
   };
 
-  const handleHeading = (level) => {
-    execCommand('formatBlock', `h${level}`);
+  const handleHeading = (level: number) => {
+    if (isMarkdownMode) {
+      const prefix = '#'.repeat(level) + ' ';
+      insertMarkdown(prefix);
+    } else {
+      execCommand('formatBlock', `h${level}`);
+    }
   };
 
   const handleQuote = () => {
-    execCommand('formatBlock', 'blockquote');
+    if (isMarkdownMode) {
+      insertMarkdown('> ');
+    } else {
+      execCommand('formatBlock', 'blockquote');
+    }
   };
 
   const handleLink = () => {
@@ -49,7 +81,12 @@ const RichTextEditor = () => {
     }
     
     if (linkUrl) {
-      execCommand('createLink', linkUrl);
+      if (isMarkdownMode) {
+        const selection = window.getSelection()?.toString() || 'link text';
+        insertMarkdown(`[${selection}](${linkUrl})`);
+      } else {
+        execCommand('createLink', linkUrl);
+      }
       setShowLinkInput(false);
       setLinkUrl('');
     }
@@ -62,25 +99,90 @@ const RichTextEditor = () => {
     }
     
     if (imageUrl) {
-      execCommand('insertImage', imageUrl);
+      if (isMarkdownMode) {
+        insertMarkdown(`![${imageAlt}](${imageUrl})`);
+      } else {
+        execCommand('insertImage', imageUrl);
+      }
       setShowImageInput(false);
       setImageUrl('');
       setImageAlt('');
     }
   };
 
+  const insertMarkdown = (markdown: string) => {
+    const textarea = editorRef.current as HTMLTextAreaElement;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    const newText = text.substring(0, start) + markdown + text.substring(end);
+    setMarkdownContent(newText);
+    updateContent();
+  };
+
+  const handleBold = () => {
+    if (isMarkdownMode) {
+      insertMarkdown('**bold text**');
+    } else {
+      execCommand('bold');
+    }
+  };
+
+  const handleItalic = () => {
+    if (isMarkdownMode) {
+      insertMarkdown('*italic text*');
+    } else {
+      execCommand('italic');
+    }
+  };
+
+  const handleList = (ordered: boolean) => {
+    if (isMarkdownMode) {
+      const prefix = ordered ? '1. ' : '- ';
+      insertMarkdown(prefix);
+    } else {
+      execCommand(ordered ? 'insertOrderedList' : 'insertUnorderedList');
+    }
+  };
+
+  const toggleMode = () => {
+    setIsMarkdownMode(!isMarkdownMode);
+    if (!isMarkdownMode) {
+      // Convert HTML to Markdown
+      const html = editorRef.current?.innerHTML || '';
+      // Use a markdown conversion library here
+      setMarkdownContent(html); // This is simplified, use proper HTML->MD conversion
+    } else {
+      // Convert Markdown to HTML
+      // Use a markdown conversion library here
+      if (editorRef.current) {
+        editorRef.current.innerHTML = markdownContent; // This is simplified, use proper MD->HTML conversion
+      }
+    }
+  };
+
+  const updateContent = () => {
+    if (onChange) {
+      const html = editorRef.current?.innerHTML || '';
+      onChange({
+        html,
+        markdown: markdownContent
+      });
+    }
+  };
+
   return (
-    <Card className="w-full max-w-4xl p-4">
+    <Card className={`w-full max-w-4xl p-4 ${className}`}>
       <div className="mb-4 flex flex-wrap gap-2 border-b pb-2">
         <Button
-          onClick={() => execCommand('bold')}
+          onClick={handleBold}
           className="p-2"
           title="Bold"
         >
           <Bold size={16} />
         </Button>
         <Button
-          onClick={() => execCommand('italic')}
+          onClick={handleItalic}
           className="p-2"
           title="Italic"
         >
@@ -127,6 +229,48 @@ const RichTextEditor = () => {
           title="Quote"
         >
           <Quote size={16} />
+        </Button>
+        <Button
+          onClick={() => handleList(false)}
+          className="p-2"
+          title="Bullet List"
+        >
+          <List size={16} />
+        </Button>
+        <Button
+          onClick={() => handleList(true)}
+          className="p-2"
+          title="Numbered List"
+        >
+          <ListOrdered size={16} />
+        </Button>
+        <Button
+          onClick={() => execCommand('justifyLeft')}
+          className="p-2"
+          title="Align Left"
+        >
+          <AlignLeft size={16} />
+        </Button>
+        <Button
+          onClick={() => execCommand('justifyCenter')}
+          className="p-2"
+          title="Align Center"
+        >
+          <AlignCenter size={16} />
+        </Button>
+        <Button
+          onClick={() => execCommand('justifyRight')}
+          className="p-2"
+          title="Align Right"
+        >
+          <AlignRight size={16} />
+        </Button>
+        <Button
+          onClick={toggleMode}
+          className="p-2"
+          title="Toggle Markdown Mode"
+        >
+          <FileCode size={16} />
         </Button>
       </div>
 
@@ -181,19 +325,26 @@ const RichTextEditor = () => {
         </div>
       )}
 
-      <div
-        ref={editorRef}
-        className="min-h-48 w-full p-4 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 prose prose-sm overflow-auto"
-        style={{ minHeight: '200px' }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
-            execCommand('insertParagraph');
-            e.preventDefault();
-          }
-        }}
-      >
-        <p>Start typing...</p>
-      </div>
+      {isMarkdownMode ? (
+        <textarea
+          ref={editorRef as any}
+          value={markdownContent}
+          onChange={(e) => {
+            setMarkdownContent(e.target.value);
+            updateContent();
+          }}
+          className="min-h-48 w-full p-4 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+          placeholder={placeholder}
+        />
+      ) : (
+        <div
+          ref={editorRef}
+          className="min-h-48 w-full p-4 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 prose prose-sm overflow-auto"
+          onInput={updateContent}
+          dangerouslySetInnerHTML={{ __html: initialValue }}
+          placeholder={placeholder}
+        />
+      )}
     </Card>
   );
 };
